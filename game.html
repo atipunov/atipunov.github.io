@@ -1,0 +1,324 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><title>Minesweeper</title><style>html, body, div, span, applet, object, iframe,
+        h1, h2, h3, h4, h5, h6, p, blockquote, pre,
+        a, abbr, acronym, address, big, cite, code,
+        del, dfn, em, img, ins, kbd, q, s, samp,
+        small, strike, strong, sub, sup, tt, var,
+        b, u, i, center,
+        dl, dt, dd, ol, ul, li,
+        fieldset, form, label, legend,
+        table, caption, tbody, tfoot, thead, tr, th, td,
+        article, aside, canvas, details, embed,
+        figure, figcaption, footer, header, hgroup,
+        menu, nav, output, ruby, section, summary,
+        time, mark, audio, video {
+            margin: 0;
+            padding: 0;
+            border: 0;
+            font-size: 100%;
+            font: inherit;
+            vertical-align: baseline;
+        }
+        /* HTML5 display-role reset for older browsers */
+        article, aside, details, figcaption, figure,
+        footer, header, hgroup, menu, nav, section {
+            display: block;
+        }
+        body {
+            line-height: 1;
+        }
+        * {
+            -webkit-box-sizing: border-box;
+            -moz-box-sizing: border-box;
+            box-sizing: border-box;
+        }
+
+        body, html {
+            display: table;
+            width: 100%;
+            height: 100%;
+        }
+
+        body {
+            font-family: 'Orbitron', sans-serif;
+            color: #D4EDF8;
+            text-shadow: 0 0 12px #6FC3EF;
+        }
+
+        .page {
+            display: table-cell;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        h2 {
+            font-size: 24px;
+            text-transform: uppercase;
+            margin-bottom: 1.2em;
+        }
+
+        rect {
+            shape-rendering: crispEdges;
+        }
+
+        .border {
+            fill: #F6B22D;
+            stroke: #ACC5D0;
+            stroke-width: 1;
+        }
+
+        .bg {
+            stroke: #09112A;
+            stroke-width: 1;
+        }
+
+        .base text {
+            fill: white;
+            stroke: none;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+
+        .state {
+            font-size: 30px;
+            fill: #fff780;
+            text-anchor: middle;
+            dominant-baseline: middle;
+        }
+        .state.loss {
+            fill: #fb5635;
+        }</style></head><body><div class="page"><div class="minefield"></div></div><script src="https://d3js.org/d3.v3.min.js"></script><script>var minesweeper = (function(d3, undefined) {
+            var minesweeper = {};
+
+            var blockSize = 24,
+                    borderSize = 0,
+                    padding = 1;
+
+            var state = 'playing',
+                    size = { x: 1, y: 1 },
+                    mines = 0,
+                    board = [[0]],
+                    revealed = [0];
+
+            var svg,
+                    colourMap = {
+                        'x': '#fb5635',
+                        0: '#70c4df',
+                        1: '#a8e2fa',
+                        2: '#e7fffe',
+                        3: '#f4ffe0',
+                        4: '#fcfdad',
+                        5: '#fff577',
+                        6: '#ffe247',
+                        7: '#f3b224',
+                        8: '#e0770d'
+                    };
+
+            var surrounds = [[-1, -1], [0, -1], [1, -1], [-1, 0], [1, 0], [-1, 1], [0, 1], [1, 1]];
+
+            // Reset game state based on input size, then update display
+            minesweeper.newGame = function(width, height, mineCount) {
+                size.x = parseInt(width, 10) || 0;
+                size.y = parseInt(height, 10) || 0;
+                mines = parseInt(mineCount, 10) || 0;
+
+                // Sanity check
+                if(size.x < 2 || size.y < 2 || mines < 1 || mines > size.x * size.y * 0.5) {
+                    alert('Shit happens, keep browser bigger! ;)');
+                    return;
+                }
+
+                state = 'playing';
+
+                // First create empty 2d array accessable by arr[x][y] for board
+                var col = new Array(size.y);
+                board = Array.apply(null, new Array(size.x)).map(function() { return col.slice(); });
+
+                // revealed is 1d array of revealed spaces ordered by column then row
+                revealed = new Array(size.x * size.y);
+
+                // Place some mines
+                var minesLeft = mines, mx, my;
+                while(minesLeft) {
+                    mx = Math.floor(Math.random() * size.x);
+                    my = Math.floor(Math.random() * size.y);
+                    if(board[mx][my] !== 'x') {
+                        board[mx][my] = 'x';
+                        --minesLeft;
+                    }
+                }
+
+                // Precompute neighbour mine count and add to board
+                for(var x = 0; x < size.x; x++) {
+                    for(var y = 0; y < size.y; y++) {
+                        if(board[x][y] !== 'x') {
+                            var neighbours = 0;
+                            surrounds.forEach(function(e) {
+                                if(board[x + e[0]] && board[x + e[0]][y + e[1]] === 'x')
+                                    ++neighbours;
+                            });
+                            board[x][y] = neighbours;
+                        }
+                    }
+                }
+
+                displayUpdate();
+            }
+
+            var reveal = function(x, y) {
+                if(!revealed[x * size.y + y]) {
+                    revealed[x * size.y + y] = true;
+                    var thisSquare = board[x][y];
+                    if(thisSquare === 'x') {
+                        state = 'loss';
+                    }
+                    else if(thisSquare === 0) {
+                        surrounds.forEach(function(e) {
+                            var nx = x + e[0], ny = y + e[1];
+                            if(nx >= 0 && nx < size.x && ny >= 0 && ny < size.y) {
+                                reveal(nx, ny);
+                            }
+                        });
+                    }
+                }
+            }
+
+            // d3 helpers
+            var identity = function(d) { return d; },
+                    offset = function(d) { return ( borderSize + d * (blockSize + padding)) },
+                    offsetX = function(d, i) { return 'translate(' + offset(i) + ', 0)'; },
+                    offsetY = function(d, i) { return 'translate(0, ' + offset(i) + ')'; }
+
+            // One time set up of svg and definitions
+            var displayInit = function() {
+                svg = d3.select('.minefield').append('svg');
+                var defs = svg.append('defs');
+
+                var coverBase = defs.append('radialGradient').attr('id', 'coverBase');
+                coverBase.append('stop').attr('offset', '0%').attr('stop-color', 'gray');
+                coverBase.append('stop').attr('offset', '20%').attr('stop-color', 'white');
+
+                var coverShine = defs.append('linearGradient').attr('id', 'coverShine')
+                        .attr('x1', 0).attr('x2', 0).attr('y1', 0).attr('y2', 1);
+                coverShine.append('stop').attr('offset', '0%').attr('stop-color', 'red').attr('stop-opacity', 0.1);
+                coverShine.append('stop').attr('offset', '83%').attr('stop-color', 'yellow').attr('stop-opacity', 0);
+
+            }
+
+            // d3 description of playing field
+            var displayUpdate = function() {
+                var boardWidth = size.x * (blockSize + padding),
+                        boardHeight = size.y * (blockSize + padding);
+
+                svg
+                        .attr('width', boardWidth + borderSize * 2)
+                        .attr('height', boardHeight + borderSize * 2);
+
+                var border = svg.selectAll('.border').data([1]);
+                border.enter().append('rect').attr('class', 'border');
+                border
+                        .attr('x', borderSize - 2)
+                        .attr('y', borderSize - 2)
+                        .attr('width', boardWidth + 3)
+                        .attr('height', boardHeight + 3);
+
+                var baseContainer = svg.selectAll('.basecontainer').data([1]);
+                baseContainer.enter().append('g').attr('class', 'basecontainer');
+
+                // enter columns/base/text
+                var columns = baseContainer.selectAll('.column').data(board);
+
+                columns.enter().append('g')
+                        .attr('class', 'column')
+                        .attr('transform', offsetX);
+
+                var base = columns.selectAll('.base').data(identity);
+
+                var baseG = base.enter().append('g')
+                        .attr('class', 'base')
+                        .attr('transform', offsetY);
+                baseG.append('rect')
+                        .attr('class', 'bg')
+                        .attr('width', blockSize)
+                        .attr('height', blockSize);
+                baseG.append('text')
+                        .attr('transform', 'translate(' + blockSize * 0.5 + ', ' + blockSize * 0.5 + ')');
+
+                columns.selectAll('.base text').data(identity)
+                        .text(identity)
+                        .style('fill', function(d) { return colourMap[d]; });
+
+                // exit
+                base.exit().remove();
+                columns.exit().remove();
+
+                var coverContainer = svg.selectAll('.covercontainer').data([1]);
+                coverContainer.enter().append('g')
+                        .attr('class', 'covercontainer');
+
+                // enter cover
+                var cover = coverContainer.selectAll('.cover').data(revealed);
+
+                cover.enter().append('g').attr('class', 'cover');
+
+                cover.selectAll('.coverbase').data([1]).enter().append('rect')
+                        .attr('class', 'coverbase')
+                        .attr('width', blockSize)
+                        .attr('height', blockSize)
+                        .style('fill', 'url(#coverBase)');
+
+                cover.selectAll('.covershine').data([1]).enter().append('polygon')
+                        .attr('class', 'covershine')
+                        .attr('points', '0,0 ' + blockSize + ',0 0,' + blockSize)
+                        .style('fill', 'url(#coverShine)');
+
+                // update
+                cover
+                        .attr('transform', function(d, i) {
+                            return 'translate(' + offset(Math.floor(i / size.y)) + ', ' + offset(i % size.y) + ')'; })
+                        .on('click', function(d, i) {
+                            if(state === 'playing' && !d) {
+                                reveal(Math.floor(i / size.y), i % size.y);
+                                if(state === 'playing' && revealed.length - revealed.filter(Object).length === mines) {
+                                    state = 'victory';
+                                }
+                                displayUpdate();
+                            }
+                        })
+                        .transition().duration(500)
+                        .attr('opacity', function(d) { return d ? 0 : 1; })
+                        .transition()
+                        .attr('visibility', function(d) { return d ? 'hidden' : 'visible'; });
+
+                // exit
+                cover.exit().remove();
+
+                // Game over message
+                var stateMessage = svg.selectAll('.state').data(state === 'playing' ? [] : [1]);
+
+                stateMessage.enter().append('text')
+                        .attr('class', 'state ' + state)
+                        .attr('opacity', 0)
+                        .attr('transform', 'translate(' + (boardWidth * 0.5 + borderSize) + ', ' + (boardHeight * 0.5 + borderSize) + ')')
+                        .transition().duration(1500)
+                        .attr('opacity', 1);
+
+                stateMessage.text(state === 'victory' ? 'Congratulations!' : 'GAME OVER');
+
+                stateMessage.exit().transition().duration(300)
+                        .attr('opacity', 0)
+                        .remove();
+            }
+
+            displayInit();
+
+            window.onresize = onResizeWindow;
+
+            function onResizeWindow(){
+                var horizontalBlocksCount = window.innerWidth / (blockSize + padding) ;
+                var verticalBlocksCount = window.innerHeight / (blockSize + padding);
+                minesweeper.newGame(horizontalBlocksCount, verticalBlocksCount, horizontalBlocksCount * verticalBlocksCount / 7);
+            };
+            onResizeWindow();
+
+            return minesweeper;
+        })(d3);</script></body></html>
