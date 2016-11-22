@@ -1,0 +1,22 @@
+table thead td {
+    font-weight: 800;
+}
+
+table tbody td:first-child {
+    font-weight: 800;
+    text-align: right;
+    vertical-align: middle;
+}
+
+.data {
+    margin-top: 30px;
+}
+
+.graph {
+    margin-top: 50px;
+    margin-bottom: 50px;
+}
+
+.header td {
+    background-color: #FFd;
+}
